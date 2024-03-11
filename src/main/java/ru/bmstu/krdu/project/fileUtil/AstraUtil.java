@@ -44,6 +44,7 @@ public class AstraUtil {
         result.put("k", ksList.get(idx).getK());
         result.put("pa", outList.get(idx).getP());
         result.put("p", ksList.get(idx).getP());
+        result.put("alpha", alphas[idx]);
         return result;
     }
 

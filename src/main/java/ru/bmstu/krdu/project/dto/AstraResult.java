@@ -9,8 +9,38 @@ public class AstraResult {
     private double foth;
 
     private double fflow;
+    private double w;
+    private double beta;
+    private double m;
+    private double f;
+    private double d;
+    private double rho;
 
     public AstraResult() {
+    }
+
+    public double getRho() {
+        return rho;
+    }
+
+    public void setRho(double rho) {
+        this.rho = rho;
+    }
+
+    public double getD() {
+        return d;
+    }
+
+    public void setD(double d) {
+        this.d = d;
+    }
+
+    public double getF() {
+        return f;
+    }
+
+    public void setF(double f) {
+        this.f = f;
     }
 
     public double getP() {
@@ -69,6 +99,30 @@ public class AstraResult {
         this.fflow = fflow;
     }
 
+    public double getW() {
+        return w;
+    }
+
+    public void setW(double w) {
+        this.w = w;
+    }
+
+    public double getBeta() {
+        return beta;
+    }
+
+    public void setBeta(double beta) {
+        this.beta = beta;
+    }
+
+    public double getM() {
+        return m;
+    }
+
+    public void setM(double m) {
+        this.m = m;
+    }
+
     public void setField(String name, double value) {
         switch (name) {
             case "p": setP(value); break;
@@ -78,6 +132,9 @@ public class AstraResult {
             case "i": setI(value); break;
             case "foth": setFoth(value); break;
             case "fflow": setFflow(value); break;
+            case "w": setW(value); break;
+            case "beta": setBeta(value); break;
+            case "m": setM(value); break;
         }
     }
 }

@@ -1,28 +1,30 @@
 package ru.bmstu.krdu.project;
 
-import org.apache.commons.math3.analysis.UnivariateFunction;
 import org.apache.commons.math3.analysis.integration.SimpsonIntegrator;
-import org.apache.commons.math3.analysis.integration.TrapezoidIntegrator;
+import org.apache.commons.math3.analysis.interpolation.SplineInterpolator;
+import ru.bmstu.krdu.project.dto.AstraResult;
 import ru.bmstu.krdu.project.fileUtil.AstraReader;
 import ru.bmstu.krdu.project.fileUtil.AstraUtil;
 
-import java.awt.*;
-import java.awt.geom.Point2D;
 import java.text.DecimalFormat;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
+import ru.bmstu.krdu.project.dto.Vector;
+
 public class Application {
+
     private static final double FOTH_FOR_OPTIMAL = 189;
     private static final double[] ALPHAS = new double[]{0.85, 0.86, 0.87, 0.88, 0.89, 0.9};
+    private static final double GG_ALPHA = 13;
     private static final double[] ALPHAS_PR = new double[]{0.375, 0.38, 0.385};
     private static final double KM0 = 3.40496;
     private static final double L_PRIW = 1.7;
 
-    private static final double D_KS = 0.15;
-    private static final double VOLUME_UP_TO_CR = 1510000 * Math.pow(10, -9);
+    private static final double D_KS = 0.20;
+    private static final double VOLUME_UP_TO_CR = 2810000 * Math.pow(10, -9);
     private static final double P = 83360; //тяга, Ньютоны
     private static final double MYA_DIV_MSUM = 0.95; //отношение расхода компонентов ядра к общему
     private static final double MPR_DIV_MSUM = 0.05; //отношение расхода компонентов пристенка к общему
@@ -41,7 +43,7 @@ public class Application {
         AstraReader astraReader = new AstraReader();
 
         var resInKS = astraReader.readParams("optimalAlpha\\KRDU.RES");
-        var manyResult = astraReader.readParams("secheniya\\KRDU.RES");
+        var sectionResult = astraReader.readParams("secheniya\\KRDU.RES");
         var optMap = AstraUtil.tableOfOptimum(resInKS, FOTH_FOR_OPTIMAL, ALPHAS, KM0);
         double iOpt = optMap.get("i") * 9.81;
         Map<String, Double> mapOfParamFromPr = AstraUtil.tableOfPristenok(astraReader.readParams("optimalAlpha\\KRDU_PR.RES"), FOTH_FOR_OPTIMAL, ALPHAS_PR, KM0);
@@ -112,23 +114,177 @@ public class Application {
 
         double lRas = /*X_A * dCr / 2*/ parab.apply(dOut / 2) - parab.apply(dCr / 2);
         System.out.printf("Lras = Xa * Rcr = %s * %s / 2 = %s м\n", X_A, decimal4Format.format(dCr), decimal3Format.format(lRas));
-        double r1 = 1.4 * dKs / 2;
-        double r2 = 1.3 * dCr / 2;
+        double r1 = 1.2 * dKs / 2;
+        double r2 = 1.2 * dCr / 2;
         System.out.printf("R1 = 1.4 * Rk = 1.4 * %s / 2 = %s м\n", decimal3Format.format(dKs), decimal3Format.format(r1));
         System.out.printf("R2 = 1.3 * Rkr = 1.3 * %s / 2 = %s м\n", decimal3Format.format(dCr), decimal3Format.format(r2));
-        var soplo = findSoplo(r1, r2, dKs / 2, dCr / 2, aCoefOfParab, bCoefOfParab, lRas, VOLUME_UP_TO_CR);
-        System.out.println("");
-        var points = printPoints(soplo, 200);
+
+        var funcsOfNozzle = findNozzle(r1, r2, dKs / 2, dCr / 2, aCoefOfParab, bCoefOfParab, lRas, VOLUME_UP_TO_CR, false);
+        //printPoints(funcsOfNozzle, 200);
+        var sectionPoints = findXForAstraRes(funcsOfNozzle, sectionResult, mFlowTotal);
+
+        double phiParallel = (1 + Math.cos(BETA_A)) / 2;
+        System.out.printf("phiP = (1 + cos(%s)) / 2 = %s\n", Math.toDegrees(BETA_A), decimal3Format.format(phiParallel));
+        FrictionResult frictionResult = getFrictionForces(sectionPoints);
+
+        double totalFrictionForce = Arrays.stream(frictionResult.getFrictionForces()).sum();
+        System.out.printf("Ptr = sum(diffPtr) = %s Н\n", decimal1Format.format(totalFrictionForce));
+
+        double phiFriction = (P - totalFrictionForce) / P;
+        System.out.printf("phiTr = (P - Ptr) / P = (%s - %s) / %s = %s\n", P, decimal1Format.format(totalFrictionForce), P, decimal3Format.format(phiFriction));
+
+        double phiNozzle = phiFriction * phiParallel;
+        System.out.printf("phiS = phiP * phiTr = %s * %s = %s\n", decimal3Format.format(phiParallel), decimal3Format.format(phiFriction), decimal3Format.format(phiNozzle));
+
+        double mFlowInCenter = MYA_DIV_MSUM * mFlowTotal;
+        double mFlowOnWall = MPR_DIV_MSUM * mFlowTotal;
+        System.out.printf("mtya = %s * msum = %s * %s = %s кг/c\nmFlowOnWall", MYA_DIV_MSUM, MYA_DIV_MSUM, decimal1Format.format(mFlowTotal), decimal1Format.format(mFlowInCenter));
+        System.out.printf("mtpr = %s * msum = %s * %s = %s кг/c\n", MPR_DIV_MSUM, MPR_DIV_MSUM, decimal1Format.format(mFlowTotal), decimal1Format.format(mFlowOnWall));
+
+        AstraResult ggAstraRes = astraReader.readParams("gg\\KRDU.RES").stream().findFirst().get();
+        System.out.printf("alphaGg = %s\n", GG_ALPHA);
+        System.out.printf("Tgg = %s K\n", decimal1Format.format(ggAstraRes.getT()));
+
+        double kmInCenter = optMap.get("alpha") * KM0;
+        double mFlowFuelCenter = mFlowInCenter / (1 + KM0);
+        System.out.printf("mGYa = mtya / (1 + kmya) = %s / (1 + %s) = %s кг/c\n", decimal2Format.format(mFlowInCenter) , decimal2Format.format(kmInCenter), decimal2Format.format(mFlowFuelCenter));
+
+        double mFlowOxInCenter = mFlowInCenter - mFlowFuelCenter;
+        System.out.printf("mOkYa = mtya - mGYa = %s - %s = %s кг/c\n", decimal2Format.format(mFlowInCenter), decimal2Format.format(mFlowFuelCenter), decimal2Format.format(mFlowOxInCenter));
+
+        double mFlowFuelGGCenter = mFlowOxInCenter / (GG_ALPHA / KM0);
+        System.out.printf("mGGGYa = mOkYa / KmGG = %s / %s = %s кг/с\n", decimal2Format.format(mFlowOxInCenter), decimal2Format.format(GG_ALPHA / KM0), decimal2Format.format(mFlowFuelGGCenter));
+
+        double mFlowFuelFluidCenter = mFlowFuelCenter - mFlowFuelGGCenter;
+        System.out.printf("mGJidYa = mGYa - mGGGYa = %s - %s = %s кг/с\n", decimal2Format.format(mFlowFuelCenter), decimal2Format.format(mFlowFuelGGCenter), decimal2Format.format(mFlowFuelFluidCenter));
+
+        double mFlowGGYa = mFlowFuelGGCenter + mFlowOxInCenter;
+        System.out.printf("mGGYa = mGGGYa + mOkYa = %s + %s = %s кг/с\n", decimal2Format.format(mFlowFuelGGCenter), decimal2Format.format(mFlowOxInCenter), decimal2Format.format(mFlowGGYa));
     }
 
-    private static Map<Double, Function<Double, Double>> findSoplo(double r1, double r2, double rKs, double rCr, double aCoef, double bCoef, double lRas, double volume) {
+    private static FrictionResult getFrictionForces(List<Vector<AstraResult>> sectionPoints) {
+        double[] squares = new double[sectionPoints.size() - 1];
+        double[] cCoef = new double[sectionPoints.size() - 1];
+        double[] betas = new double[sectionPoints.size() - 1];
+        double[] diffX = new double[sectionPoints.size() - 1];
+        double[] avgR = new double[sectionPoints.size() - 1];
+        double[] m = new double[sectionPoints.size() - 1];
+        double[] w = new double[sectionPoints.size() - 1];
+        double[] rho = new double[sectionPoints.size() - 1];
+        double[] frictionForces = new double[sectionPoints.size() - 1];
+        double cFDefault = 0.006;
+        double r = 0.89;
+        System.out.println("------------------------------------------------------------------------");
+        System.out.println("beta_ai - Rcr - diffXi - diffSi - Mi - Cfi - Wi - rhoi - diffPi");
+        for (int i = 0; i < squares.length; i++) {
+            Vector<AstraResult> prevVector = sectionPoints.get(i);
+            Vector<AstraResult> currVector = sectionPoints.get(i + 1);
+            diffX[i] = (currVector.getX() - prevVector.getX());
+            avgR[i] = (currVector.getY().getD() + prevVector.getY().getD()) / 4;
+            double beta = Math.atan(((currVector.getY().getD() - prevVector.getY().getD()) / 2) / diffX[i]);
+            if(i == squares.length - 1) {
+                beta = BETA_A;
+            }
+            betas[i] = Math.abs(Math.min(beta, BETA_M));
+
+            squares[i] = 2 * Math.PI * diffX[i] * avgR[i];
+            m[i] = currVector.getY().getM();
+            w[i] = currVector.getY().getW();
+            rho[i] = currVector.getY().getRho();
+            cCoef[i] = cFDefault * Math.pow(1 + r * (((currVector.getY().getK() - 1)) / 2) * Math.pow(m[i], 2), -0.55);
+            frictionForces[i] = squares[i] * Math.cos(betas[i]) * cCoef[i] * (rho[i] * Math.pow(w[i], 2)) / 2;
+            System.out.printf("%-8s %-6s %-6s %-6s %-6s %-6s %-6s %-6s %-6s\n",
+                    decimal2Format.format(Math.toDegrees(betas[i])),
+                    decimal3Format.format(avgR[i]),
+                    decimal4Format.format(diffX[i]),
+                    decimal4Format.format(squares[i]),
+                    decimal3Format.format(m[i]),
+                    decimal4Format.format(cCoef[i]),
+                    decimal1Format.format(w[i]),
+                    decimal2Format.format(rho[i]),
+                    decimal2Format.format(frictionForces[i])
+            );
+        }
+        System.out.println("------------------------------------------------------------------------");
+        return new FrictionResult(squares, cCoef, betas, diffX, avgR, m, w, rho, frictionForces);
+    }
+
+    private static List<Vector<AstraResult>> findXForAstraRes(Map<Double, Function<Double, Double>> funcsOfNozzle, List<AstraResult> sectionOriginal, double mSumFlow) {
+
+        List<AstraResult> section = sectionOriginal.subList(1, sectionOriginal.size() - 1);
+
+        SplineInterpolator interpolator = new SplineInterpolator();
+        sectionOriginal.forEach(ar -> {
+            ar.setF(ar.getFflow() * mSumFlow);
+            ar.setD(Math.sqrt(4 * ar.getF() / Math.PI));
+            ar.setRho((ar.getP() * Math.pow(10, 6)) / (ar.getR() * ar.getT()));
+        });
+        int idxOfCritic = 0;
+        for (int i = 1; i < section.size(); i++) {
+            if (section.get(i).getFoth() == 1) {
+                idxOfCritic = i;
+                break;
+            }
+        }
+        List<AstraResult> beforeCritic = section.subList(0, idxOfCritic + 1);
+        List<AstraResult> afterCritic = section.subList(idxOfCritic + 1, section.size());
+
+        double[] boarder = new double[5];
+        AtomicInteger j = new AtomicInteger(1);
+        funcsOfNozzle.keySet().forEach(d -> {
+            boarder[j.get()] = d;
+            j.getAndIncrement();
+        });
+
+        double[] xBeforeCritic = new double[60];
+        double[] yBeforeCritic = new double[60];
+        double[] xAfterCritic = new double[60];
+        double[] yAfterCritic = new double[60];
+
+        for (int i = 1; i < boarder.length; i++) {
+            if (i <= 3) {
+                double step = (boarder[i] - boarder[i - 1]) / 20;
+                double currX = boarder[i - 1];
+                var func = funcsOfNozzle.get(boarder[i]);
+                for (int k = (i - 1) * 20; k < i * 20; k++) {
+                    xBeforeCritic[k] = currX;
+                    yBeforeCritic[k] = (-1) * func.apply(currX) + 0.0001; //костыль
+                    currX += step;
+                }
+            } else {
+                double step = (boarder[i] - boarder[i - 1]) / 60;
+                double currX = boarder[i - 1];
+                var func = funcsOfNozzle.get(boarder[i]);
+                for (int k = 0; k < yAfterCritic.length; k++) {
+                    xAfterCritic[k] = currX;
+                    yAfterCritic[k] = func.apply(currX) + 0.10 * k / yAfterCritic.length; //костыль
+                    currX += step;
+                }
+                break;
+            }
+        }
+        /*System.out.println(Arrays.stream(beforeCritic.stream().map(a -> a.getD() / 2).toArray()).toList());
+        System.out.println(Arrays.stream(afterCritic.stream().map(a -> a.getD() / 2).toArray()).toList());
+        System.out.println(Arrays.toString(yBeforeCritic));*/
+        var beforeCrFuncRadiusToX = interpolator.interpolate(yBeforeCritic, xBeforeCritic);
+        var afterCrFuncRadiusToX = interpolator.interpolate(yAfterCritic, xAfterCritic);
+
+        List<Vector<AstraResult>> result = new LinkedList<>();
+        beforeCritic.forEach(a -> result.add(new Vector<>(beforeCrFuncRadiusToX.value((-1) * a.getD() / 2), a)));
+        afterCritic.forEach(a -> result.add(new Vector<>(afterCrFuncRadiusToX.value(a.getD() / 2), a)));
+        result.add(0, new Vector<>(0, sectionOriginal.get(0)));
+        result.add(result.size(), new Vector<>(boarder[boarder.length - 1], sectionOriginal.get(sectionOriginal.size() - 1)));
+        return result;
+    }
+
+    private static Map<Double, Function<Double, Double>> findNozzle(double r1, double r2, double rKs, double rCr, double aCoef, double bCoef, double lRas, double volume, boolean printIterations) {
         double epsilon = 1000;
         SimpsonIntegrator integrator = new SimpsonIntegrator();
 
         double start = Math.sqrt((r1 + r2) * (r1 + r2) - (rKs - r1 - rCr - r2) * (rKs - r1 - rCr - r2));
 
-        for (int i = (int) (start) + 100; i < 1000; i++) {
-            var func = soplo(r1, r2, (double) (i * 0.001), rKs, rCr, aCoef, bCoef, lRas);
+        for (int i = (int) (start) + 138; i < 1000; i++) {
+            var func = nozzle(r1, r2, (double) (i * 0.001), rKs, rCr, aCoef, bCoef, lRas);
             double vol = 0;
             double[] boarder = new double[5];
             AtomicInteger j = new AtomicInteger(1);
@@ -140,18 +296,18 @@ public class Application {
                 int finalK = k;
                 vol += integrator.integrate(100, x -> Math.pow(func.get(boarder[finalK]).apply(x), 2), boarder[k - 1], boarder[k]) * Math.PI;
             }
-            //System.out.println("i, vol=" + i + ", " + vol);
+            if (printIterations) {
+                System.out.println("i, vol=" + i + ", " + vol);
+            }
             if (Math.abs(vol - volume) < 0.0001) {
                 System.out.println("lSuj = " + (double) (i * 0.001) + " м");
                 return func;
             }
         }
-
-
         return null;
     }
 
-    private static Map<Double, Function<Double, Double>> soplo(double r1, double r2, double lSuj, double rKs, double rCr, double aCoef, double bCoef, double lRas) {
+    private static Map<Double, Function<Double, Double>> nozzle(double r1, double r2, double lSuj, double rKs, double rCr, double aCoef, double bCoef, double lRas) {
         Map<Double, Function<Double, Double>> profileSopla = new LinkedHashMap<>();
         double cx = (-1) * (rKs - r1 - (rCr + r2));
         double c = Math.sqrt(cx * cx + lSuj * lSuj);
@@ -175,10 +331,10 @@ public class Application {
         return profileSopla;
     }
 
-    private static List<Vector> printPoints(Map<Double, Function<Double, Double>> functionMap, int numOfPoints) {
+    private static List<Vector<Double>> printPoints(Map<Double, Function<Double, Double>> functionMap, int numOfPoints) {
         System.out.println("----------------------");
         System.out.println("СОПЛО БЕЗ КС");
-        List<Vector> vectorList = new ArrayList<>();
+        List<Vector<Double>> vectorList = new ArrayList<>();
         double[] boarder = new double[4];
         AtomicInteger j = new AtomicInteger(0);
         functionMap.keySet().forEach(d -> {
@@ -197,36 +353,71 @@ public class Application {
                 func = functionMap.get(boarder[idxBoarder]);
             }
             double y = func.apply(x);
-            vectorList.add(new Vector(x, y));
+            vectorList.add(new Vector<>(x, y));
             System.out.printf("%s  %s\n", x * 1000, y * 1000);
         }
         System.out.println("----------------------");
         return vectorList;
     }
 
-    private static class Vector {
-        private double x;
-        private double y;
+    private static class FrictionResult {
+        private double[] squares;
+        private double[] cCoef;
+        private double[] betas;
+        private double[] diffX;
+        private double[] avgR;
+        private double[] m;
+        private double[] w;
+        private double[] rho;
+        private double[] frictionForces;
 
-        public Vector(double x, double y) {
-            this.x = x;
-            this.y = y;
+        public FrictionResult(double[] squares, double[] cCoef, double[] betas, double[] diffX, double[] avgR, double[] m, double[] w, double[] rho, double[] frictionForces) {
+            this.squares = squares;
+            this.cCoef = cCoef;
+            this.betas = betas;
+            this.diffX = diffX;
+            this.avgR = avgR;
+            this.m = m;
+            this.w = w;
+            this.rho = rho;
+            this.frictionForces = frictionForces;
         }
 
-        public double getX() {
-            return x;
+        public double[] getSquares() {
+            return squares;
         }
 
-        public void setX(double x) {
-            this.x = x;
+        public double[] getcCoef() {
+            return cCoef;
         }
 
-        public double getY() {
-            return y;
+        public double[] getBetas() {
+            return betas;
         }
 
-        public void setY(double y) {
-            this.y = y;
+        public double[] getDiffX() {
+            return diffX;
+        }
+
+        public double[] getAvgR() {
+            return avgR;
+        }
+
+        public double[] getM() {
+            return m;
+        }
+
+        public double[] getW() {
+            return w;
+        }
+
+        public double[] getRho() {
+            return rho;
+        }
+
+        public double[] getFrictionForces() {
+            return frictionForces;
         }
     }
+
 }

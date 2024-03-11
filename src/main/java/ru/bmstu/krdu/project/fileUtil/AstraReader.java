@@ -24,6 +24,9 @@ public class AstraReader {
         patternMap.put("i", Pattern.compile("I\\?=(\\d+(?:\\.\\d+)?)"));
         patternMap.put("foth", Pattern.compile("F/F\\*=(\\d+(?:\\.\\d+)?)"));
         patternMap.put("fflow", Pattern.compile("F\"=(\\d+(?:\\.\\d+)?)"));
+        patternMap.put("w", Pattern.compile("W=(\\d+(?:\\.\\d+)?)"));
+        patternMap.put("beta", Pattern.compile("B=(\\d+(?:\\.\\d+)?)"));
+        patternMap.put("m", Pattern.compile("W/A=(\\d+(?:\\.\\d+)?)"));
     }
 
     public List<AstraResult> readParams(String path) {
