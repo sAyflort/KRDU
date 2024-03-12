@@ -120,7 +120,7 @@ public class Application {
         System.out.printf("R2 = 1.3 * Rkr = 1.3 * %s / 2 = %s м\n", decimal3Format.format(dCr), decimal3Format.format(r2));
 
         var funcsOfNozzle = findNozzle(r1, r2, dKs / 2, dCr / 2, aCoefOfParab, bCoefOfParab, lRas, VOLUME_UP_TO_CR, false);
-        //printPoints(funcsOfNozzle, 200);
+        printPoints(funcsOfNozzle, 200);
         var sectionPoints = findXForAstraRes(funcsOfNozzle, sectionResult, mFlowTotal);
 
         double phiParallel = (1 + Math.cos(BETA_A)) / 2;
@@ -138,7 +138,7 @@ public class Application {
 
         double mFlowInCenter = MYA_DIV_MSUM * mFlowTotal;
         double mFlowOnWall = MPR_DIV_MSUM * mFlowTotal;
-        System.out.printf("mtya = %s * msum = %s * %s = %s кг/c\nmFlowOnWall", MYA_DIV_MSUM, MYA_DIV_MSUM, decimal1Format.format(mFlowTotal), decimal1Format.format(mFlowInCenter));
+        System.out.printf("mtya = %s * msum = %s * %s = %s кг/c\n", MYA_DIV_MSUM, MYA_DIV_MSUM, decimal1Format.format(mFlowTotal), decimal1Format.format(mFlowInCenter));
         System.out.printf("mtpr = %s * msum = %s * %s = %s кг/c\n", MPR_DIV_MSUM, MPR_DIV_MSUM, decimal1Format.format(mFlowTotal), decimal1Format.format(mFlowOnWall));
 
         AstraResult ggAstraRes = astraReader.readParams("gg\\KRDU.RES").stream().findFirst().get();
@@ -152,8 +152,8 @@ public class Application {
         double mFlowOxInCenter = mFlowInCenter - mFlowFuelCenter;
         System.out.printf("mOkYa = mtya - mGYa = %s - %s = %s кг/c\n", decimal2Format.format(mFlowInCenter), decimal2Format.format(mFlowFuelCenter), decimal2Format.format(mFlowOxInCenter));
 
-        double mFlowFuelGGCenter = mFlowOxInCenter / (GG_ALPHA / KM0);
-        System.out.printf("mGGGYa = mOkYa / KmGG = %s / %s = %s кг/с\n", decimal2Format.format(mFlowOxInCenter), decimal2Format.format(GG_ALPHA / KM0), decimal2Format.format(mFlowFuelGGCenter));
+        double mFlowFuelGGCenter = mFlowOxInCenter / (GG_ALPHA * KM0);
+        System.out.printf("mGGGYa = mOkYa / KmGG = %s / %s = %s кг/с\n", decimal2Format.format(mFlowOxInCenter), decimal2Format.format(GG_ALPHA * KM0), decimal2Format.format(mFlowFuelGGCenter));
 
         double mFlowFuelFluidCenter = mFlowFuelCenter - mFlowFuelGGCenter;
         System.out.printf("mGJidYa = mGYa - mGGGYa = %s - %s = %s кг/с\n", decimal2Format.format(mFlowFuelCenter), decimal2Format.format(mFlowFuelGGCenter), decimal2Format.format(mFlowFuelFluidCenter));
