@@ -29,11 +29,12 @@ public class Application {
     private static final double MYA_DIV_MSUM = 0.95; //отношение расхода компонентов ядра к общему
     private static final double MPR_DIV_MSUM = 0.05; //отношение расхода компонентов пристенка к общему
 
-    private static final DecimalFormat decimal0Format = new DecimalFormat("0.");
+    private static final DecimalFormat decimal0Format = new DecimalFormat("0");
     private static final DecimalFormat decimal1Format = new DecimalFormat("0.0");
     private static final DecimalFormat decimal2Format = new DecimalFormat("0.00");
     private static final DecimalFormat decimal3Format = new DecimalFormat("0.000");
     private static final DecimalFormat decimal4Format = new DecimalFormat("0.0000");
+    private static final DecimalFormat decimal5Format = new DecimalFormat("0.00000");
 
     private static final double BETA_A = 12 * Math.PI / 180; // рад
     private static final double BETA_M = 0.7178; // рад
@@ -43,7 +44,7 @@ public class Application {
         AstraReader astraReader = new AstraReader();
 
         var resInKS = astraReader.readParams("optimalAlpha\\KRDU.RES");
-        var sectionResult = astraReader.readParams("secheniya\\KRDU.RES");
+        var sectionResult = astraReader.readParams("section\\KRDU.RES");
         var optMap = AstraUtil.tableOfOptimum(resInKS, FOTH_FOR_OPTIMAL, ALPHAS, KM0);
         double iOpt = optMap.get("i") * 9.81;
         Map<String, Double> mapOfParamFromPr = AstraUtil.tableOfPristenok(astraReader.readParams("optimalAlpha\\KRDU_PR.RES"), FOTH_FOR_OPTIMAL, ALPHAS_PR, KM0);
@@ -119,7 +120,7 @@ public class Application {
         System.out.printf("R1 = 1.4 * Rk = 1.4 * %s / 2 = %s м\n", decimal3Format.format(dKs), decimal3Format.format(r1));
         System.out.printf("R2 = 1.3 * Rkr = 1.3 * %s / 2 = %s м\n", decimal3Format.format(dCr), decimal3Format.format(r2));
 
-        var funcsOfNozzle = findNozzle(r1, r2, dKs / 2, dCr / 2, aCoefOfParab, bCoefOfParab, lRas, VOLUME_UP_TO_CR, false);
+        var funcsOfNozzle = findNozzle(r1, r2, dKs / 2, dCr / 2, aCoefOfParab, bCoefOfParab, lRas, VOLUME_UP_TO_CR, true);
         printPoints(funcsOfNozzle, 200);
         var sectionPoints = findXForAstraRes(funcsOfNozzle, sectionResult, mFlowTotal);
 
@@ -280,10 +281,11 @@ public class Application {
     private static Map<Double, Function<Double, Double>> findNozzle(double r1, double r2, double rKs, double rCr, double aCoef, double bCoef, double lRas, double volume, boolean printIterations) {
         double epsilon = 1000;
         SimpsonIntegrator integrator = new SimpsonIntegrator();
-
+        if (printIterations) {
+            System.out.println("----------------------------------");
+        }
         double start = Math.sqrt((r1 + r2) * (r1 + r2) - (rKs - r1 - rCr - r2) * (rKs - r1 - rCr - r2));
-
-        for (int i = (int) (start) + 138; i < 1000; i++) {
+        for (int i = (int) ((start) * 1000) + 1; i < 1000; i++) {
             var func = nozzle(r1, r2, (double) (i * 0.001), rKs, rCr, aCoef, bCoef, lRas);
             double vol = 0;
             double[] boarder = new double[5];
@@ -297,10 +299,13 @@ public class Application {
                 vol += integrator.integrate(100, x -> Math.pow(func.get(boarder[finalK]).apply(x), 2), boarder[k - 1], boarder[k]) * Math.PI;
             }
             if (printIterations) {
-                System.out.println("i, vol=" + i + ", " + vol);
+                System.out.printf("i = %s мм, vol = %s м^3\n", i, decimal5Format.format(vol));
             }
             if (Math.abs(vol - volume) < 0.0001) {
                 System.out.println("lSuj = " + (double) (i * 0.001) + " м");
+                if (printIterations) {
+                    System.out.println("----------------------------------");
+                }
                 return func;
             }
         }
@@ -308,7 +313,7 @@ public class Application {
     }
 
     private static Map<Double, Function<Double, Double>> nozzle(double r1, double r2, double lSuj, double rKs, double rCr, double aCoef, double bCoef, double lRas) {
-        Map<Double, Function<Double, Double>> profileSopla = new LinkedHashMap<>();
+        Map<Double, Function<Double, Double>> nozzle = new LinkedHashMap<>();
         double cx = (-1) * (rKs - r1 - (rCr + r2));
         double c = Math.sqrt(cx * cx + lSuj * lSuj);
         double l1 = (r1 * c / r2) / (1 + r1 / r2);
@@ -322,13 +327,13 @@ public class Application {
 
         double x1 = lSuj - Math.abs(k * r2) / Math.sqrt(1 + k * k);
 
-        profileSopla.put(x0, x -> Math.sqrt(r1 * r1 - x * x) + rKs - r1);
-        profileSopla.put(x1, x -> k * x + b);
-        profileSopla.put(lSuj, x -> (-1) * Math.sqrt(r2 * r2 - (x - lSuj) * (x - lSuj)) + rCr + r2);
+        nozzle.put(x0, x -> Math.sqrt(r1 * r1 - x * x) + rKs - r1);
+        nozzle.put(x1, x -> k * x + b);
+        nozzle.put(lSuj, x -> (-1) * Math.sqrt(r2 * r2 - (x - lSuj) * (x - lSuj)) + rCr + r2);
         double cCoef = lSuj - aCoef * rCr * rCr - bCoef * rCr;
 
-        profileSopla.put(lSuj + lRas, x -> ((-1) * bCoef + Math.sqrt(bCoef * bCoef - 4 * aCoef * (cCoef - x))) / (2 * aCoef));
-        return profileSopla;
+        nozzle.put(lSuj + lRas, x -> ((-1) * bCoef + Math.sqrt(bCoef * bCoef - 4 * aCoef * (cCoef - x))) / (2 * aCoef));
+        return nozzle;
     }
 
     private static List<Vector<Double>> printPoints(Map<Double, Function<Double, Double>> functionMap, int numOfPoints) {
