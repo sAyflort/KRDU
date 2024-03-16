@@ -2,6 +2,7 @@ package ru.bmstu.krdu.project;
 
 import org.apache.commons.math3.analysis.integration.SimpsonIntegrator;
 import org.apache.commons.math3.analysis.interpolation.SplineInterpolator;
+import org.apache.commons.math3.analysis.solvers.BrentSolver;
 import ru.bmstu.krdu.project.dto.AstraResult;
 import ru.bmstu.krdu.project.fileUtil.AstraReader;
 import ru.bmstu.krdu.project.fileUtil.AstraUtil;
@@ -23,6 +24,8 @@ public class Application {
     private static final double KM0 = 3.40496;
     private static final double L_PRIW = 1.7;
 
+    private static final double RHO_OX = 1140;
+    private static final double RHO_FUEL = 835;
     private static final double D_KS = 0.20;
     private static final double VOLUME_UP_TO_CR = 2810000 * Math.pow(10, -9);
     private static final double P = 83360; //тяга, Ньютоны
@@ -36,9 +39,35 @@ public class Application {
     private static final DecimalFormat decimal4Format = new DecimalFormat("0.0000");
     private static final DecimalFormat decimal5Format = new DecimalFormat("0.00000");
 
+    private static final Function<Double, Double> FRENEL_UNDER_INTEGRATE_FUNC = z -> Math.pow(Math.E, (-1) * z * z);
+
+    private static final SimpsonIntegrator INTEGRATOR = new SimpsonIntegrator();
     private static final double BETA_A = 12 * Math.PI / 180; // рад
     private static final double BETA_M = 0.7178; // рад
     private static final double X_A = 33.92;
+
+    private static int NUM_FUEL_SLICE = 5;
+    private static int NUM_PR_SLICE = 2;
+    private static int NUM_NOZZLE_PER_PR_SLICE = 40; // : 4
+    private static double COEF_STEP_PR = 10; // > 1
+
+    private static double DELTA_P_NOZZLE_PR = 1; // < DELTA_P_MAG_FUEL1
+    private static double DELTA_P_NOZZLE_FUEL = 1; // < DELTA_P_MAG_FUEL1
+    private static double DELTA_P_NOZZLE_GG = 1; // < DELTA_P_MAG_FUEL1
+    private static double NU_NOZZLE_PR = 0.8; //0.75-0.85
+    private static double NU_NOZZLE_GG = 0.8; //0.75-0.85
+    private static double NU_NOZZLE_FUEL = 0.25; //0.1-0.5
+
+    private static double P1_O = 1.2;
+    private static double P1_G = 1.2;
+    private static double ETA_OX = 0.6;
+    private static double ETA_FUEL = 0.6;
+    private static double ETA_T = 0.78;
+    private static double DELTA_P_MAG_OX = 1.5;
+    private static double DELTA_P_MAG_FUEL = 1.5;
+    private static double DELTA_P_MAG_FUEL1 = 7;
+    private static double DELTA_P_T1 = 1.5;
+    private static double DELTA_P_T2 = 1;
 
     public static void main(String[] args) {
         AstraReader astraReader = new AstraReader();
@@ -143,12 +172,13 @@ public class Application {
         System.out.printf("mtpr = %s * msum = %s * %s = %s кг/c\n", MPR_DIV_MSUM, MPR_DIV_MSUM, decimal1Format.format(mFlowTotal), decimal1Format.format(mFlowOnWall));
 
         AstraResult ggAstraRes = astraReader.readParams("gg\\KRDU.RES").stream().findFirst().get();
+        ggAstraRes.setRho((ggAstraRes.getP() * Math.pow(10, 6)) / (ggAstraRes.getR() * ggAstraRes.getT()));
         System.out.printf("alphaGg = %s\n", GG_ALPHA);
         System.out.printf("Tgg = %s K\n", decimal1Format.format(ggAstraRes.getT()));
 
         double kmInCenter = optMap.get("alpha") * KM0;
-        double mFlowFuelCenter = mFlowInCenter / (1 + KM0);
-        System.out.printf("mGYa = mtya / (1 + kmya) = %s / (1 + %s) = %s кг/c\n", decimal2Format.format(mFlowInCenter) , decimal2Format.format(kmInCenter), decimal2Format.format(mFlowFuelCenter));
+        double mFlowFuelCenter = mFlowInCenter / (1 + kmInCenter);
+        System.out.printf("mGYa = mtya / (1 + kmya) = %s / (1 + %s) = %s кг/c\n", decimal2Format.format(mFlowInCenter), decimal2Format.format(kmInCenter), decimal2Format.format(mFlowFuelCenter));
 
         double mFlowOxInCenter = mFlowInCenter - mFlowFuelCenter;
         System.out.printf("mOkYa = mtya - mGYa = %s - %s = %s кг/c\n", decimal2Format.format(mFlowInCenter), decimal2Format.format(mFlowFuelCenter), decimal2Format.format(mFlowOxInCenter));
@@ -161,6 +191,243 @@ public class Application {
 
         double mFlowGGYa = mFlowFuelGGCenter + mFlowOxInCenter;
         System.out.printf("mGGYa = mGGGYa + mOkYa = %s + %s = %s кг/с\n", decimal2Format.format(mFlowFuelGGCenter), decimal2Format.format(mFlowOxInCenter), decimal2Format.format(mFlowGGYa));
+
+        double pGG = getTNABalanceResult(ggAstraRes, mFlowOxInCenter, mFlowFuelCenter, pKs);
+
+        double mFlowNozzlePr = mFlowOnWall / (NUM_NOZZLE_PER_PR_SLICE * NUM_PR_SLICE);
+        System.out.printf("mFlowNozzlePr = mFlowOnWall / numOfNozzlePr = %s / %s = %s кг/c\n", decimal2Format.format(mFlowOnWall), NUM_NOZZLE_PER_PR_SLICE * NUM_PR_SLICE, decimal4Format.format(mFlowNozzlePr));
+
+
+        double squareNozzlePr = mFlowNozzlePr / (NU_NOZZLE_PR * Math.sqrt(2 * DELTA_P_NOZZLE_PR * Math.pow(10, 6) * RHO_FUEL));
+        System.out.printf("squareNozzlePr = mFlowNozzlePr / (NU_NOZZLE_PR * sqrt(2 * DELTA_P_NOZZLE_PR * Math.pow(10, 6) * RHO_FUEL)) = %s / (%s * sqrt(2 * %s * 1000000 * %s)) = %s * 10^-5 м^2\n",
+                decimal5Format.format(mFlowNozzlePr), decimal2Format.format(NU_NOZZLE_PR), decimal2Format.format(DELTA_P_NOZZLE_PR), decimal2Format.format(RHO_FUEL), decimal3Format.format(squareNozzlePr * Math.pow(10, 5)));
+        double dNozzlePr = Math.sqrt(4 * squareNozzlePr / Math.PI);
+        System.out.printf("dNozzlePr = sqrt(4 * squareNozzlePr / PI) = sqrt(4 * %s * 10^-5 / PI) = %s мм\n", decimal3Format.format(squareNozzlePr * Math.pow(10, 5)), decimal2Format.format(dNozzlePr * 1000));
+
+        //TODO нужна оптимизация
+        MixedHead mixedHead = getMixedHead(NUM_PR_SLICE, NUM_NOZZLE_PER_PR_SLICE, NUM_FUEL_SLICE, dNozzlePr, dKs, true);
+        double numOfNozzleFuel = mixedHead.getFuelNozzles().size();
+        double numOfNozzleOx = mixedHead.getOxNozzles().size();
+        System.out.printf("numOfNozzleOx = %s\n", numOfNozzleOx);
+        System.out.printf("numOfNozzleFuel = %s\n", numOfNozzleFuel);
+
+        double mFlowNozzleFuel = mFlowFuelFluidCenter / numOfNozzleFuel;
+        System.out.printf("mFlowNozzleFuel = mFlowFuelFluidCenter / numOfNozzleFuel = %s / %s = %s кг/c\n", decimal2Format.format(mFlowFuelFluidCenter), decimal2Format.format(numOfNozzleFuel), decimal4Format.format(mFlowNozzleFuel));
+        double mFlowNozzleGG = mFlowGGYa / numOfNozzleOx;
+        System.out.printf("mFlowNozzleGG = mFlowGGYa / numOfNozzleOx = %s / %s = %s кг/c\n", decimal2Format.format(mFlowGGYa), decimal2Format.format(numOfNozzleOx), decimal4Format.format(mFlowNozzleGG));
+
+        double squareNozzleFuel = mFlowNozzleFuel / (NU_NOZZLE_FUEL * Math.sqrt(2 * DELTA_P_NOZZLE_FUEL * Math.pow(10, 6) * RHO_FUEL));
+        System.out.printf("squareNozzleFuel = mFlowNozzleFuel / (numOfNozzleFuel * sqrt(2 * DELTA_P_NOZZLE_FUEL * Math.pow(10, 6) * RHO_FUEL)) = %s / (%s * sqrt(2 * %s * 1000000 * %s)) = %s * 10^-5 м^2\n",
+                decimal5Format.format(mFlowNozzleFuel), decimal2Format.format(numOfNozzleFuel), decimal2Format.format(DELTA_P_NOZZLE_FUEL), decimal2Format.format(RHO_FUEL), decimal3Format.format(squareNozzleFuel * Math.pow(10, 5)));
+        double dNozzleFuel = Math.sqrt(4 * squareNozzleFuel / Math.PI);
+        System.out.printf("dNozzleFuel = sqrt(4 * squareNozzleFuel / PI) = sqrt(4 * %s * 10^-5 / PI) = %s мм\n", decimal3Format.format(squareNozzleFuel * Math.pow(10, 5)), decimal2Format.format(dNozzleFuel * 1000));
+
+        double squareNozzleGG = mFlowNozzleGG / (NU_NOZZLE_GG * ggAstraRes.getRho() * Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), 1 / ggAstraRes.getK()) * Math.sqrt((2 * ggAstraRes.getK() / (ggAstraRes.getK() - 1) * ggAstraRes.getT() * ggAstraRes.getK() * (1 - Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), (ggAstraRes.getK() - 1) / ggAstraRes.getK())))));
+        System.out.printf("squareNozzleGG = %s * 10^-5 м^2\n", decimal2Format.format(squareNozzleGG * 100000));
+        double dNozzleGG = Math.sqrt(4 * squareNozzleGG / Math.PI);
+        System.out.printf("dNozzleGG = sqrt(4 * squareNozzleGG / PI) = sqrt(4 * %s * 10^-5 / PI) = %s мм\n", decimal3Format.format(squareNozzleGG * Math.pow(10, 5)), decimal2Format.format(dNozzleGG * 1000));
+        getKMByIevlevMethod(mixedHead, dKs, mFlowNozzlePr, mFlowOxInCenter / numOfNozzleOx, mFlowFuelGGCenter / numOfNozzleOx, mFlowNozzleFuel);
+    }
+
+    private static Object getKMByIevlevMethod(MixedHead mixedHead, double dKs, double mFlowPr, double mFlowGGOx, double mFlowGGFuel, double mFlowFuel) {
+        int numOfSteps = 10;
+        Map<Vector<Double>, Double> kmByPoint = new HashMap<>();
+        double r = 0;
+        double rOfArea = mixedHead.getH() * 3;
+        double rMax = (dKs - mixedHead.getH()) / 2;
+        double rStep = rMax / (numOfSteps - 1);
+        double argStep = (Math.PI / 4) / (numOfSteps);
+        while (r <= rMax) {
+            double arg = 0;
+            while (arg - (Math.PI / 4) < 0.0001) {
+                Vector<Double> currCenter = new Vector<>(r * Math.cos(arg), r * Math.sin(arg));
+
+                double finalR = r;
+                double finalArg = arg;
+                List<Vector<Double>> pr = mixedHead.getPrNozzles().stream().filter(v -> checkPointInArea(currCenter, v, rOfArea))
+                        .map(v -> toNewCoordSystemInFirstQuarter(v, finalR, finalArg)).toList();
+                List<Vector<Double>> fuel = mixedHead.getFuelNozzles().stream().filter(v -> checkPointInArea(currCenter, v, rOfArea))
+                        .map(v -> toNewCoordSystemInFirstQuarter(v, finalR, finalArg)).toList();
+                List<Vector<Double>> oxAndFuel = mixedHead.getOxNozzles().stream().filter(v -> checkPointInArea(currCenter, v, rOfArea))
+                        .map(v -> toNewCoordSystemInFirstQuarter(v, finalR, finalArg)).toList();
+
+                //FIXME DEL
+                /*List<Vector<Double>> g = new ArrayList<>();
+
+                g.addAll(pr);
+                g.addAll(fuel);
+                g.addAll(oxAndFuel);
+                g.forEach(v ->  {
+                    String formattedX = String.format("%.5f", v.getX()).replace(",", ".");
+                    String formattedY = String.format("%.5f", v.getY()).replace(",", ".");
+                    System.out.printf("(%s, %s),", formattedX, formattedY);
+                });*/
+
+                boolean lastStepPerR = r + rStep >= rMax;
+                double numerator = mFlowPr * pr.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
+                numerator += mFlowFuel * fuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
+                numerator += mFlowGGFuel * oxAndFuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
+                double denominator = mFlowGGOx * oxAndFuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
+                double kM = numerator / denominator;
+                System.out.printf("r = %s, arg = %s, alpha = %s\n", r, arg * (45 / (Math.PI / 4)), decimal3Format.format(kM / KM0));
+                arg += argStep;
+            }
+            r += rStep;
+        }
+        return null;
+    }
+
+    private static double getFrenelResult(Vector<Double> point, double h, boolean lastPerR) {
+        double hSqrt2 = h * Math.sqrt(2);
+        double hDiv2 = h / 2;
+
+        double zx1 = Math.max((Math.abs(point.getX() - hDiv2)) / hSqrt2, 0.00000000000001);
+        double zx2 = Math.max((point.getX() + hDiv2) / hSqrt2, 0.00000000000001);
+        double zy1 = Math.max((Math.abs(point.getY() - hDiv2)) / hSqrt2, 0.00000000000001);
+        double zy2 = Math.max((point.getY() + hDiv2) / hSqrt2, 0.00000000000001);
+
+        return (INTEGRATOR.integrate(100, FRENEL_UNDER_INTEGRATE_FUNC::apply, 0, zx2) - INTEGRATOR.integrate(100, FRENEL_UNDER_INTEGRATE_FUNC::apply, 0, zx1))
+                * ((lastPerR ? Math.sqrt(Math.PI) / 2 : INTEGRATOR.integrate(100, FRENEL_UNDER_INTEGRATE_FUNC::apply, 0, zy2)) - INTEGRATOR.integrate(100, FRENEL_UNDER_INTEGRATE_FUNC::apply, 0, zy1))
+                * 2 / Math.sqrt(Math.PI);
+    }
+
+    private static boolean checkPointInArea(Vector<Double> centerPoint, Vector<Double> point, double r) {
+        double x = centerPoint.getX() - point.getX();
+        double y = centerPoint.getY() - point.getY();
+        return Math.sqrt(x * x + y * y) <= r;
+    }
+
+    private static Vector<Double> toNewCoordSystemInFirstQuarter(Vector<Double> point, double r, double arg) {
+        double nineteenMinusArg = Math.min((Math.PI / 2) - arg, (Math.PI / 2));
+        Vector<Double> newAxiX = new Vector<>(Math.cos(nineteenMinusArg), (-1) * Math.sin(nineteenMinusArg));
+        Vector<Double> newAxiY = new Vector<>(Math.cos(arg), Math.sin(arg));
+        Vector<Double> res = new Vector<>(point.getX(), point.getY());
+        res.setX(res.getX() - r * Math.cos(arg));
+        res.setY(res.getY() - r * Math.sin(arg));
+        double newX = res.getX() * newAxiX.getX() + res.getY() * newAxiX.getY();
+        double newY = res.getX() * newAxiY.getX() + res.getY() * newAxiY.getY();
+        res.setX(Math.abs(newX));
+        res.setY(Math.abs(newY));
+        return res;
+    }
+
+    private static MixedHead getMixedHead(
+            int nPrSlice, int nPrNozzlePerSlice, int nFuelSlice, double dPr, double dKs, boolean printPoints
+    ) {
+        List<Vector<Double>> pointsPr = new ArrayList<>();
+        double[] dPrSlice = new double[nPrSlice];
+        for (int i = 0; i < dPrSlice.length; i++) {
+            dPrSlice[i] = dKs - (i + 1) * 2 * (dPr) * COEF_STEP_PR;
+            double arg = 0;
+            double stepAgr = 2 * Math.PI / nPrNozzlePerSlice;
+            while (arg < 2 * Math.PI) {
+                pointsPr.add(new Vector<>(dPrSlice[i] * Math.cos(arg) / 2, dPrSlice[i] * Math.sin(arg) / 2));
+                arg += stepAgr;
+            }
+        }
+        int numCenterSlice = 2 * nFuelSlice - 1;
+        double d = dPrSlice[dPrSlice.length - 1] - 2 * dPr * COEF_STEP_PR;
+        double h = d / (2 * (numCenterSlice - 1));
+        System.out.printf("d: %s\n", d);
+        List<Vector<Double>> pointsFuel = new ArrayList<>();
+        List<Vector<Double>> pointsOx = new ArrayList<>();
+
+        double yStep = h * Math.sqrt(3) / 2;
+        int yNumSlice = 0;
+        double y = 0;
+        while (y <= d / 2) {
+            double x = yNumSlice % 2 == 0 ? 0 : h / 2;
+            int xNumSlice = 0;
+            while (Math.sqrt(x * x + y * y) - d / 2 < 0.00001) {
+                Vector<Double> point = new Vector<>(x, y);
+                List<Vector<Double>> pointsSet;
+                if (yNumSlice % 2 == 0) {
+                    pointsSet = xNumSlice % 3 == 0 ? pointsFuel : pointsOx;
+                } else {
+                    pointsSet = (xNumSlice - 1) % 3 == 0 ? pointsFuel : pointsOx;
+                }
+                pointsSet.add(point);
+                if (point.getX() != 0) {
+                    pointsSet.add(new Vector<>((-1) * point.getX(), point.getY()));
+                }
+                if (point.getX() != 0 && point.getY() != 0) {
+                    pointsSet.add(new Vector<>((-1) * point.getX(), (-1) * point.getY()));
+                }
+                if (point.getY() != 0) {
+                    pointsSet.add(new Vector<>(point.getX(), (-1) * point.getY()));
+                }
+                x += h;
+                xNumSlice++;
+            }
+            y += yStep;
+            yNumSlice++;
+        }
+        if (printPoints) {
+            List<Vector<Double>> listForPrint = new ArrayList<>(pointsOx);
+            listForPrint.addAll(pointsFuel);
+            listForPrint.addAll(pointsPr);
+            System.out.print("OX:");
+            pointsOx.forEach((v) -> {
+                String formattedX = String.format("%.5f", v.getX()).replace(",", ".");
+                String formattedY = String.format("%.5f", v.getY()).replace(",", ".");
+                System.out.printf("(%s, %s),", formattedX, formattedY);
+            });
+            System.out.print("\nPR:");
+            pointsPr.forEach((v) -> {
+                String formattedX = String.format("%.5f", v.getX()).replace(",", ".");
+                String formattedY = String.format("%.5f", v.getY()).replace(",", ".");
+                System.out.printf("(%s, %s),", formattedX, formattedY);
+            });
+            System.out.print("\nFUEL:");
+            pointsFuel.forEach((v) -> {
+                String formattedX = String.format("%.5f", v.getX()).replace(",", ".");
+                String formattedY = String.format("%.5f", v.getY()).replace(",", ".");
+                System.out.printf("(%s, %s),", formattedX, formattedY);
+            });
+            System.out.println("");
+        }
+        return new MixedHead(pointsOx, pointsFuel, pointsPr, h);
+    }
+
+    private static double getTNABalanceResult(AstraResult astraResultForGG, double mOx, double mFuel, double pKs) {
+        System.out.printf("p1O = %s МПа (давление на входе в насос ок) \n", P1_O);
+        System.out.printf("p1G = %s МПа (давление на входе в насос гор)\n", P1_G);
+        System.out.printf("etaOx = %s (КПД насоса ок)\n", ETA_OX);
+        System.out.printf("etaFuel = %s (КПД насоса гор)\n", ETA_FUEL);
+        System.out.printf("etaT = %s (КПД турбины)\n", ETA_T);
+        System.out.printf("deltaPMagOx = %s МПа (потери на магистрали окислителя)\n", DELTA_P_MAG_OX);
+        System.out.printf("deltaPMagFuel = %s МПа (потери на магистрали горючего и форсунки ГГ)\n", DELTA_P_MAG_FUEL);
+        System.out.printf("deltaPMagFuel1 = %s МПа (сопротивление магистрали горючего  от выхода из насоса до входа в камеру сгорания (с учетом сопротивления форсунок))\n", DELTA_P_MAG_FUEL1);
+        System.out.printf("deltaPT1 = %s МПа (потери на отвод газа турбины к кам сгорания)\n", DELTA_P_T1);
+        System.out.printf("deltaPT2 = %s МПа (потери на ответ из ГГ в турбину)\n", DELTA_P_T2);
+        double r = astraResultForGG.getR();
+        double t = astraResultForGG.getT();
+        double k = astraResultForGG.getK();
+        double kGG = GG_ALPHA * KM0;
+
+        Function<Double, Double> requiredPower = pGg -> Math.pow(10, 3) * (mOx / (ETA_OX * RHO_OX)) * (pGg + DELTA_P_MAG_OX - P1_O) + (mFuel / (ETA_FUEL * RHO_FUEL)) * (pGg + DELTA_P_MAG_FUEL - P1_G); //кВт
+        Function<Double, Double> turbinePower = pGg -> Math.pow(10, -3) * r * t * (1 - Math.pow((pKs + DELTA_P_T1) / (pGg - DELTA_P_T2), (k - 1) / k)) * mOx * ((1 + kGG) / kGG) * ETA_T * k / (k - 1); //кВт
+
+        BrentSolver solver = new BrentSolver(0.01);
+        double pGG = solver.solve(100, p -> requiredPower.apply(p) - turbinePower.apply(p), 1, 30);
+        System.out.printf("pGG = %s МПа (подбор корней)\n", decimal1Format.format(pGG));
+
+        double p2O = pGG + DELTA_P_MAG_OX;
+        double p2G = Math.max(pGG + DELTA_P_MAG_FUEL, pKs + DELTA_P_MAG_FUEL1);
+        double p1T = pGG - DELTA_P_T2;
+        double p2T = pKs + DELTA_P_T1;
+        System.out.printf("p2O = pGG + deltaPMagOx = %s + %s = %s МПа\n", decimal1Format.format(pGG), decimal1Format.format(DELTA_P_MAG_OX), decimal1Format.format(p2O));
+        System.out.printf("p2G = max(pGG + deltaPMagFuel; pKs + deltaPMagFuel1) = max(%s + %s; %s + %s) = %s МПа\n",
+                decimal1Format.format(pGG),
+                decimal1Format.format(DELTA_P_MAG_FUEL),
+                decimal1Format.format(pKs),
+                decimal1Format.format(DELTA_P_MAG_FUEL1),
+                decimal1Format.format(p2G));
+        System.out.printf("p1T = pGG - deltaPT2 = %s - %s = %s МПа\n", decimal1Format.format(pGG), decimal1Format.format(DELTA_P_T2), decimal1Format.format(p1T));
+        System.out.printf("p2T = pKs + deltaPT1 = %s + %s = %s МПа\n", decimal1Format.format(pKs), decimal1Format.format(DELTA_P_T1), decimal1Format.format(p2T));
+        double piT = p1T / p2T;
+        System.out.printf("piT = p1T / p2T = %s / %s = %s\n", decimal1Format.format(p1T), decimal1Format.format(p2T), decimal2Format.format(piT));
+        return pGG;
     }
 
     private static FrictionResult getFrictionForces(List<Vector<AstraResult>> sectionPoints) {
@@ -183,7 +450,7 @@ public class Application {
             diffX[i] = (currVector.getX() - prevVector.getX());
             avgR[i] = (currVector.getY().getD() + prevVector.getY().getD()) / 4;
             double beta = Math.atan(((currVector.getY().getD() - prevVector.getY().getD()) / 2) / diffX[i]);
-            if(i == squares.length - 1) {
+            if (i == squares.length - 1) {
                 beta = BETA_A;
             }
             betas[i] = Math.abs(Math.min(beta, BETA_M));
@@ -285,6 +552,7 @@ public class Application {
             System.out.println("----------------------------------");
         }
         double start = Math.sqrt((r1 + r2) * (r1 + r2) - (rKs - r1 - rCr - r2) * (rKs - r1 - rCr - r2));
+
         for (int i = (int) ((start) * 1000) + 1; i < 1000; i++) {
             var func = nozzle(r1, r2, (double) (i * 0.001), rKs, rCr, aCoef, bCoef, lRas);
             double vol = 0;
@@ -422,6 +690,52 @@ public class Application {
 
         public double[] getFrictionForces() {
             return frictionForces;
+        }
+    }
+
+    private static class MixedHead {
+        private List<Vector<Double>> oxNozzles;
+        private List<Vector<Double>> fuelNozzles;
+        private List<Vector<Double>> prNozzles;
+        private double h;
+
+        public MixedHead(List<Vector<Double>> oxNozzles, List<Vector<Double>> fuelNozzles, List<Vector<Double>> prNozzles, double h) {
+            this.oxNozzles = oxNozzles;
+            this.fuelNozzles = fuelNozzles;
+            this.prNozzles = prNozzles;
+            this.h = h;
+        }
+
+        public List<Vector<Double>> getPrNozzles() {
+            return prNozzles;
+        }
+
+        public void setPrNozzles(List<Vector<Double>> prNozzles) {
+            this.prNozzles = prNozzles;
+        }
+
+        public List<Vector<Double>> getOxNozzles() {
+            return oxNozzles;
+        }
+
+        public void setOxNozzles(List<Vector<Double>> oxNozzles) {
+            this.oxNozzles = oxNozzles;
+        }
+
+        public List<Vector<Double>> getFuelNozzles() {
+            return fuelNozzles;
+        }
+
+        public void setFuelNozzles(List<Vector<Double>> fuelNozzles) {
+            this.fuelNozzles = fuelNozzles;
+        }
+
+        public double getH() {
+            return h;
+        }
+
+        public void setH(double h) {
+            this.h = h;
         }
     }
 

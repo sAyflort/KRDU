@@ -24,4 +24,5 @@ public class Vector<Y> {
     public void setY(Y y) {
         this.y = y;
     }
+
 }
