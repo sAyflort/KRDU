@@ -26,6 +26,7 @@ public class Application {
 
     private static final double RHO_OX = 1140;
     private static final double RHO_FUEL = 835;
+    private static final double MU_FUEL = 20 * Math.pow(10, -4);
     private static final double D_KS = 0.20;
     private static final double VOLUME_UP_TO_CR = 2810000 * Math.pow(10, -9);
     private static final double P = 83360; //тяга, Ньютоны
@@ -46,21 +47,21 @@ public class Application {
     private static final double BETA_M = 0.7178; // рад
     private static final double X_A = 33.92;
 
-    private static int NUM_FUEL_SLICE = 6;
+    private static int NUM_FUEL_SLICE = 3; //3
     private static int NUM_PR_SLICE = 2;
     private static int NUM_NOZZLE_PER_PR_SLICE = 48; // : 4
-    private static double COEF_STEP_PR = 6.15; // > 1
+    private static double COEF_STEP_PR = 9.5; //  9.5
 
     private static double DELTA_P_NOZZLE_PR = 1; // < DELTA_P_MAG_FUEL1
-    private static double DELTA_P_NOZZLE_FUEL = 1; // < DELTA_P_MAG_FUEL1
-    private static double DELTA_P_NOZZLE_GG = 1; // < DELTA_P_MAG_FUEL1
+    private static double DELTA_P_NOZZLE_FUEL = 2; // < DELTA_P_MAG_FUEL1
+    private static double DELTA_P_NOZZLE_GG = 4; // < DELTA_P_MAG_FUEL1
     private static double NU_NOZZLE_PR = 0.8; //0.75-0.85
-    private static double NU_NOZZLE_GG = 0.8; //0.75-0.85
+    private static double NU_NOZZLE_GG = 0.85; //0.75-0.85
     private static double NU_NOZZLE_FUEL = 0.25; //0.1-0.5
     private static double TWO_ALPHA_NOZZLE_FUEL = Math.PI / 2;
     private static double PHI_NOZZLE_FUEL = 0.45;
     private static double A_NOZZLE_FUEL = 2.5;
-    private static double R_INPUT_DIV_R_NOZZLE_NOZZLE_FUEL = 2.5;
+    private static double R_INPUT_DIV_R_NOZZLE_NOZZLE_FUEL = 1.07;
     private static int NUM_OF_TAN_INPUT_NOZZLE_FUEL = 4;
 
 
@@ -229,18 +230,46 @@ public class Application {
         double rTanInputNozzleFuel = Math.sqrt((rInputNozzleFuel * rNozzleFuel) / (NUM_OF_TAN_INPUT_NOZZLE_FUEL * A_NOZZLE_FUEL));
         System.out.printf("rTanInput = sqrt((rInputNozzleFuel * rNozzleFuel) / (NUM_OF_TAN_INPUT_NOZZLE_FUEL * A_NOZZLE_FUEL)) = sqrt((%s * %s) / (%s * %s)) = %s мм\n", decimal2Format.format(rInputNozzleFuel * 1000), decimal2Format.format(rNozzleFuel * 1000), NUM_OF_TAN_INPUT_NOZZLE_FUEL, decimal2Format.format(A_NOZZLE_FUEL), decimal2Format.format(rTanInputNozzleFuel * 1000));
 
-        //double reInputNozzleFuel = 4 * mFlowNozzleFuel / ()
+        double reInputNozzleFuel = 4 * mFlowNozzleFuel / (MU_FUEL * Math.PI * 2 * rTanInputNozzleFuel * Math.sqrt(NUM_OF_TAN_INPUT_NOZZLE_FUEL));
+        System.out.printf("reInputNozzleFuel = 4 * mFlowNozzleFuel / (MU_FUEL * Math.PI * 2 * rTanInputNozzleFuel * Math.sqrt(NUM_OF_TAN_INPUT_NOZZLE_FUEL)) = %s\n", decimal0Format.format(reInputNozzleFuel));
+
+        double lambdaNozzleFuel = Math.pow(10, (25.8 / Math.pow(Math.log10(reInputNozzleFuel), 2.58)) - 2);
+        System.out.printf("lambda = Math.pow(10, (25.8 / Math.pow(Math.log10(reInputNozzleFuel), 2.58)) - 2) = %s\n", decimal4Format.format(lambdaNozzleFuel));
+
+        double aEffNozzleFuel = (rInputNozzleFuel * rNozzleFuel) / (NUM_OF_TAN_INPUT_NOZZLE_FUEL * Math.pow(rTanInputNozzleFuel, 2) + lambdaNozzleFuel * rInputNozzleFuel * (rInputNozzleFuel - rNozzleFuel) / 2);
+        System.out.printf("aEffNozzleFuel = (rInputNozzleFuel * rNozzleFuel) / (NUM_OF_TAN_INPUT_NOZZLE_FUEL * Math.pow(rTanInputNozzleFuel, 2) + lambdaNozzleFuel * rInputNozzleFuel * (rInputNozzleFuel - rNozzleFuel) / 2) = %s\n", decimal3Format.format(aEffNozzleFuel));
+        double aRef = (A_NOZZLE_FUEL - aEffNozzleFuel) / aEffNozzleFuel;
+        System.out.printf("aRef = %s", decimal1Format.format(aRef * 100));
+        System.out.println("%");
+
+        double lInput = 1.45 * rTanInputNozzleFuel * 2;
+        System.out.printf("lInput = 1.5 * dTanInputNozzleFuel = %s мм\n", decimal2Format.format(lInput * 1000));
+
+        double lNozzle = 0.5 * rNozzleFuel * 2;
+        System.out.printf("lNozzle = 0.5 * dNozzleFuel = %s мм\n", decimal2Format.format(lNozzle * 1000));
+
+        double rKNozzleFuel = rInputNozzleFuel + rTanInputNozzleFuel;
+        System.out.printf("rKNozzleFuel = rInputNozzleFuel + rTanInputNozzleFuel = %s мм\n", decimal2Format.format(rKNozzleFuel * 1000));
+
+        double argNozzleOutputR = Math.acos(1 - rTanInputNozzleFuel / rKNozzleFuel);
+        double rOutputNozzleFuel = Math.sqrt(Math.pow(rKNozzleFuel * Math.sin(argNozzleOutputR) + lInput, 2) + Math.pow(rKNozzleFuel * Math.cos(argNozzleOutputR), 2));
+        System.out.println(rOutputNozzleFuel - rKNozzleFuel);
+
+        System.out.printf("rOutputNozzleFuel = %s мм\n", decimal2Format.format(rOutputNozzleFuel * 1000));
 
         double squareNozzleGG = mFlowNozzleGG / (NU_NOZZLE_GG * ggAstraRes.getRho() * Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), 1 / ggAstraRes.getK()) * Math.sqrt((2 * ggAstraRes.getK() / (ggAstraRes.getK() - 1) * ggAstraRes.getT() * ggAstraRes.getK() * (1 - Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), (ggAstraRes.getK() - 1) / ggAstraRes.getK())))));
         System.out.printf("squareNozzleGG = %s * 10^-5 м^2\n", decimal2Format.format(squareNozzleGG * 100000));
         double dNozzleGG = Math.sqrt(4 * squareNozzleGG / Math.PI);
+
+        System.out.println("Шага достаточно: " + ((rOutputNozzleFuel + (dNozzleGG / 2) + 1 * Math.pow(10, -3)) < mixedHead.getH()) + "; diff: " + decimal2Format.format(((rOutputNozzleFuel + (dNozzleGG / 2) + 1 * Math.pow(10, -3)) - mixedHead.getH()) * 1000) + " мм");
+
         System.out.printf("dNozzleGG = sqrt(4 * squareNozzleGG / PI) = sqrt(4 * %s * 10^-5 / PI) = %s мм\n", decimal3Format.format(squareNozzleGG * Math.pow(10, 5)), decimal2Format.format(dNozzleGG * 1000));
         IevleevResult ievleevResult = getKMByIevlevMethod(mixedHead, dKs, mFlowNozzlePr, mFlowOxInCenter / numOfNozzleOx, mFlowFuelGGCenter / numOfNozzleOx, mFlowNozzleFuel, true);
 
     }
 
     private static IevleevResult getKMByIevlevMethod(MixedHead mixedHead, double dKs, double mFlowPr, double mFlowGGOx, double mFlowGGFuel, double mFlowFuel, boolean print) {
-        int numOfSteps = 5;
+        int numOfSteps = 10;
         List<List<Double>> result = new LinkedList<>();
 
         double rOfArea = mixedHead.getH() * 3;
@@ -256,11 +285,11 @@ public class Application {
                 double finalR = r;
                 double finalArg = arg;
                 List<Vector<Double>> pr = mixedHead.getPrNozzles().stream().filter(v -> checkPointInArea(currCenter, v, rOfArea))
-                        .map(v -> toNewCoordSystemInFirstQuarter(v, finalR, finalArg)).toList();
+                        .map(v -> toNewCoordSystem(v, finalR, finalArg)).toList();
                 List<Vector<Double>> fuel = mixedHead.getFuelNozzles().stream().filter(v -> checkPointInArea(currCenter, v, rOfArea))
-                        .map(v -> toNewCoordSystemInFirstQuarter(v, finalR, finalArg)).toList();
+                        .map(v -> toNewCoordSystem(v, finalR, finalArg)).toList();
                 List<Vector<Double>> oxAndFuel = mixedHead.getOxNozzles().stream().filter(v -> checkPointInArea(currCenter, v, rOfArea))
-                        .map(v -> toNewCoordSystemInFirstQuarter(v, finalR, finalArg)).toList();
+                        .map(v -> toNewCoordSystem(v, finalR, finalArg)).toList();
                 boolean lastStepPerR = r + rStep >= rMax;
                 double denominator = mFlowPr * pr.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
                 denominator += mFlowFuel * fuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
@@ -313,7 +342,7 @@ public class Application {
         return Math.sqrt(x * x + y * y) <= r;
     }
 
-    private static Vector<Double> toNewCoordSystemInFirstQuarter(Vector<Double> point, double r, double arg) {
+    private static Vector<Double> toNewCoordSystem(Vector<Double> point, double r, double arg) {
         double nineteenMinusArg = Math.min((Math.PI / 2) - arg, (Math.PI / 2));
         Vector<Double> newAxiX = new Vector<>(Math.cos(nineteenMinusArg), (-1) * Math.sin(nineteenMinusArg));
         Vector<Double> newAxiY = new Vector<>(Math.cos(arg), Math.sin(arg));
@@ -341,11 +370,11 @@ public class Application {
                 arg += stepAgr;
             }
         }
-        int numCenterSlice = 2 * nFuelSlice - 1;
+        int numCenterSlice = 2 * nFuelSlice + 1;
         double d = dPrSlice[dPrSlice.length - 1] - 2 * dPr * COEF_STEP_PR;
         double h = d / (2 * (numCenterSlice - 1));
-        System.out.printf("H: %s\n", h);
-        System.out.printf("d: %s\n", d);
+        System.out.printf("H: %s мм\n", decimal2Format.format(h * 1000));
+        System.out.printf("d: %s мм\n", decimal2Format.format(d * 1000));
         List<Vector<Double>> pointsFuel = new ArrayList<>();
         List<Vector<Double>> pointsOx = new ArrayList<>();
 
@@ -355,7 +384,7 @@ public class Application {
         while (y <= d / 2) {
             double x = yNumSlice % 2 == 0 ? 0 : h / 2;
             int xNumSlice = 0;
-            while (Math.sqrt(x * x + y * y) - d / 2 < 0.00001) {
+            while (Math.sqrt(x * x + y * y) - (d / 2) < 0.00001) {
                 Vector<Double> point = new Vector<>(x, y);
                 List<Vector<Double>> pointsSet;
                 if (yNumSlice % 2 == 0) {
