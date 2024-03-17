@@ -11,7 +11,7 @@ public class AstraUtil {
         List<AstraResult> ksList = new LinkedList<>();
         List<AstraResult> crList = new LinkedList<>();
         List<AstraResult> outList = new LinkedList<>();
-        astraResults.stream().forEach(ar -> {
+        astraResults.forEach(ar -> {
             if (ar.getFoth() == 0) {
                 ksList.add(ar);
             } else if (Math.abs(ar.getFoth() - foth) < 1.5) {

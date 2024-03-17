@@ -46,10 +46,10 @@ public class Application {
     private static final double BETA_M = 0.7178; // рад
     private static final double X_A = 33.92;
 
-    private static int NUM_FUEL_SLICE = 5;
+    private static int NUM_FUEL_SLICE = 6;
     private static int NUM_PR_SLICE = 2;
-    private static int NUM_NOZZLE_PER_PR_SLICE = 40; // : 4
-    private static double COEF_STEP_PR = 10; // > 1
+    private static int NUM_NOZZLE_PER_PR_SLICE = 48; // : 4
+    private static double COEF_STEP_PR = 6.15; // > 1
 
     private static double DELTA_P_NOZZLE_PR = 1; // < DELTA_P_MAG_FUEL1
     private static double DELTA_P_NOZZLE_FUEL = 1; // < DELTA_P_MAG_FUEL1
@@ -57,6 +57,12 @@ public class Application {
     private static double NU_NOZZLE_PR = 0.8; //0.75-0.85
     private static double NU_NOZZLE_GG = 0.8; //0.75-0.85
     private static double NU_NOZZLE_FUEL = 0.25; //0.1-0.5
+    private static double TWO_ALPHA_NOZZLE_FUEL = Math.PI / 2;
+    private static double PHI_NOZZLE_FUEL = 0.45;
+    private static double A_NOZZLE_FUEL = 2.5;
+    private static double R_INPUT_DIV_R_NOZZLE_NOZZLE_FUEL = 2.5;
+    private static int NUM_OF_TAN_INPUT_NOZZLE_FUEL = 4;
+
 
     private static double P1_O = 1.2;
     private static double P1_G = 1.2;
@@ -119,15 +125,6 @@ public class Application {
         double pOut = optMap.get("pa");
         double pKs = optMap.get("p");
 
-        /*double step = (pKs - pOut) / 99;
-        double[] pForAstra = new double[100];
-        pForAstra[0] = pKs;
-        for (int i = 1; i < pForAstra.length; i++) {
-            pForAstra[i] = pKs - i * step;
-        }
-        pForAstra[pForAstra.length - 1] = pOut;
-        System.out.println(Arrays.toString(pForAstra));*/
-
         double dOtn = dOut / dCr;
         double pOtn = pKs / pOut;
 
@@ -142,7 +139,7 @@ public class Application {
         double bCoefOfParab = Math.tan(Math.PI / 2 - BETA_M) - aCoefOfParab * dCr;
         Function<Double, Double> parab = x -> aCoefOfParab * x * x;
 
-        double lRas = /*X_A * dCr / 2*/ parab.apply(dOut / 2) - parab.apply(dCr / 2);
+        double lRas = parab.apply(dOut / 2) - parab.apply(dCr / 2);
         System.out.printf("Lras = Xa * Rcr = %s * %s / 2 = %s м\n", X_A, decimal4Format.format(dCr), decimal3Format.format(lRas));
         double r1 = 1.2 * dKs / 2;
         double r2 = 1.2 * dCr / 2;
@@ -220,28 +217,42 @@ public class Application {
         System.out.printf("squareNozzleFuel = mFlowNozzleFuel / (numOfNozzleFuel * sqrt(2 * DELTA_P_NOZZLE_FUEL * Math.pow(10, 6) * RHO_FUEL)) = %s / (%s * sqrt(2 * %s * 1000000 * %s)) = %s * 10^-5 м^2\n",
                 decimal5Format.format(mFlowNozzleFuel), decimal2Format.format(numOfNozzleFuel), decimal2Format.format(DELTA_P_NOZZLE_FUEL), decimal2Format.format(RHO_FUEL), decimal3Format.format(squareNozzleFuel * Math.pow(10, 5)));
         double dNozzleFuel = Math.sqrt(4 * squareNozzleFuel / Math.PI);
+        double rNozzleFuel = dNozzleFuel / 2;
         System.out.printf("dNozzleFuel = sqrt(4 * squareNozzleFuel / PI) = sqrt(4 * %s * 10^-5 / PI) = %s мм\n", decimal3Format.format(squareNozzleFuel * Math.pow(10, 5)), decimal2Format.format(dNozzleFuel * 1000));
+        System.out.printf("Rvx / rc = %s\n", R_INPUT_DIV_R_NOZZLE_NOZZLE_FUEL);
+        System.out.printf("A = %s\n", A_NOZZLE_FUEL);
+        System.out.printf("phi = %s\n", PHI_NOZZLE_FUEL);
+
+        double rInputNozzleFuel = R_INPUT_DIV_R_NOZZLE_NOZZLE_FUEL * (dNozzleFuel / 2);
+        System.out.printf("rInputNozzleFuel = R_INPUT_DIV_R_NOZZLE_NOZZLE_FUEL * (dNozzleFuel / 2) = %s * (%s / 2) = %s мм\n", R_INPUT_DIV_R_NOZZLE_NOZZLE_FUEL, decimal2Format.format(dNozzleFuel * 1000), decimal2Format.format(rInputNozzleFuel * 1000));
+
+        double rTanInputNozzleFuel = Math.sqrt((rInputNozzleFuel * rNozzleFuel) / (NUM_OF_TAN_INPUT_NOZZLE_FUEL * A_NOZZLE_FUEL));
+        System.out.printf("rTanInput = sqrt((rInputNozzleFuel * rNozzleFuel) / (NUM_OF_TAN_INPUT_NOZZLE_FUEL * A_NOZZLE_FUEL)) = sqrt((%s * %s) / (%s * %s)) = %s мм\n", decimal2Format.format(rInputNozzleFuel * 1000), decimal2Format.format(rNozzleFuel * 1000), NUM_OF_TAN_INPUT_NOZZLE_FUEL, decimal2Format.format(A_NOZZLE_FUEL), decimal2Format.format(rTanInputNozzleFuel * 1000));
+
+        //double reInputNozzleFuel = 4 * mFlowNozzleFuel / ()
 
         double squareNozzleGG = mFlowNozzleGG / (NU_NOZZLE_GG * ggAstraRes.getRho() * Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), 1 / ggAstraRes.getK()) * Math.sqrt((2 * ggAstraRes.getK() / (ggAstraRes.getK() - 1) * ggAstraRes.getT() * ggAstraRes.getK() * (1 - Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), (ggAstraRes.getK() - 1) / ggAstraRes.getK())))));
         System.out.printf("squareNozzleGG = %s * 10^-5 м^2\n", decimal2Format.format(squareNozzleGG * 100000));
         double dNozzleGG = Math.sqrt(4 * squareNozzleGG / Math.PI);
         System.out.printf("dNozzleGG = sqrt(4 * squareNozzleGG / PI) = sqrt(4 * %s * 10^-5 / PI) = %s мм\n", decimal3Format.format(squareNozzleGG * Math.pow(10, 5)), decimal2Format.format(dNozzleGG * 1000));
-        getKMByIevlevMethod(mixedHead, dKs, mFlowNozzlePr, mFlowOxInCenter / numOfNozzleOx, mFlowFuelGGCenter / numOfNozzleOx, mFlowNozzleFuel);
+        IevleevResult ievleevResult = getKMByIevlevMethod(mixedHead, dKs, mFlowNozzlePr, mFlowOxInCenter / numOfNozzleOx, mFlowFuelGGCenter / numOfNozzleOx, mFlowNozzleFuel, true);
+
     }
 
-    private static Object getKMByIevlevMethod(MixedHead mixedHead, double dKs, double mFlowPr, double mFlowGGOx, double mFlowGGFuel, double mFlowFuel) {
-        int numOfSteps = 10;
-        Map<Vector<Double>, Double> kmByPoint = new HashMap<>();
-        double r = 0;
+    private static IevleevResult getKMByIevlevMethod(MixedHead mixedHead, double dKs, double mFlowPr, double mFlowGGOx, double mFlowGGFuel, double mFlowFuel, boolean print) {
+        int numOfSteps = 5;
+        List<List<Double>> result = new LinkedList<>();
+
         double rOfArea = mixedHead.getH() * 3;
         double rMax = (dKs - mixedHead.getH()) / 2;
         double rStep = rMax / (numOfSteps - 1);
         double argStep = (Math.PI / 4) / (numOfSteps);
-        while (r <= rMax) {
-            double arg = 0;
-            while (arg - (Math.PI / 4) < 0.0001) {
+        double arg = 0;
+        while (arg - (Math.PI / 4) < 0.0001) {
+            double r = 0;
+            List<Double> resultByArg = new LinkedList<>();
+            while (r <= rMax) {
                 Vector<Double> currCenter = new Vector<>(r * Math.cos(arg), r * Math.sin(arg));
-
                 double finalR = r;
                 double finalArg = arg;
                 List<Vector<Double>> pr = mixedHead.getPrNozzles().stream().filter(v -> checkPointInArea(currCenter, v, rOfArea))
@@ -250,44 +261,49 @@ public class Application {
                         .map(v -> toNewCoordSystemInFirstQuarter(v, finalR, finalArg)).toList();
                 List<Vector<Double>> oxAndFuel = mixedHead.getOxNozzles().stream().filter(v -> checkPointInArea(currCenter, v, rOfArea))
                         .map(v -> toNewCoordSystemInFirstQuarter(v, finalR, finalArg)).toList();
-
-                //FIXME DEL
-                /*List<Vector<Double>> g = new ArrayList<>();
-
-                g.addAll(pr);
-                g.addAll(fuel);
-                g.addAll(oxAndFuel);
-                g.forEach(v ->  {
-                    String formattedX = String.format("%.5f", v.getX()).replace(",", ".");
-                    String formattedY = String.format("%.5f", v.getY()).replace(",", ".");
-                    System.out.printf("(%s, %s),", formattedX, formattedY);
-                });*/
-
                 boolean lastStepPerR = r + rStep >= rMax;
-                double numerator = mFlowPr * pr.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
-                numerator += mFlowFuel * fuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
-                numerator += mFlowGGFuel * oxAndFuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
-                double denominator = mFlowGGOx * oxAndFuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
+                double denominator = mFlowPr * pr.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
+                denominator += mFlowFuel * fuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
+                denominator += mFlowGGFuel * oxAndFuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
+                double numerator = mFlowGGOx * oxAndFuel.stream().map(v -> getFrenelResult(v, mixedHead.getH(), lastStepPerR)).reduce(Double::sum).orElse(0.0);
                 double kM = numerator / denominator;
-                System.out.printf("r = %s, arg = %s, alpha = %s\n", r, arg * (45 / (Math.PI / 4)), decimal3Format.format(kM / KM0));
+                resultByArg.add(kM);
+                r += rStep;
+            }
+            result.add(resultByArg);
+            arg += argStep;
+        }
+
+        if (print) {
+            arg = 0;
+            for (int i = 0; i < result.size(); i++) {
+                double r = 0;
+                List<Double> currKmByR = result.get(i);
+                for (int j = 0; j < currKmByR.size(); j++) {
+                    String formattedX = String.format("%.5f", r).replace(",", ".");
+                    String formattedY = String.format("%.5f", currKmByR.get(j)).replace(",", ".");
+                    System.out.printf("(%s, %s),", formattedX, formattedY);
+                    r += rStep;
+                }
+                System.out.println("");
                 arg += argStep;
             }
-            r += rStep;
         }
-        return null;
+
+        return new IevleevResult(result, argStep, rStep, (Math.PI / 4), rMax);
     }
 
     private static double getFrenelResult(Vector<Double> point, double h, boolean lastPerR) {
         double hSqrt2 = h * Math.sqrt(2);
         double hDiv2 = h / 2;
 
-        double zx1 = Math.max((Math.abs(point.getX() - hDiv2)) / hSqrt2, 0.00000000000001);
-        double zx2 = Math.max((point.getX() + hDiv2) / hSqrt2, 0.00000000000001);
-        double zy1 = Math.max((Math.abs(point.getY() - hDiv2)) / hSqrt2, 0.00000000000001);
-        double zy2 = Math.max((point.getY() + hDiv2) / hSqrt2, 0.00000000000001);
+        double zx1 = (point.getX() - hDiv2) / hSqrt2;
+        double zx2 = (point.getX() + hDiv2) / hSqrt2;
+        double zy1 = (point.getY() - hDiv2) / hSqrt2;
+        double zy2 = (point.getY() + hDiv2) / hSqrt2;
 
-        return (INTEGRATOR.integrate(100, FRENEL_UNDER_INTEGRATE_FUNC::apply, 0, zx2) - INTEGRATOR.integrate(100, FRENEL_UNDER_INTEGRATE_FUNC::apply, 0, zx1))
-                * ((lastPerR ? Math.sqrt(Math.PI) / 2 : INTEGRATOR.integrate(100, FRENEL_UNDER_INTEGRATE_FUNC::apply, 0, zy2)) - INTEGRATOR.integrate(100, FRENEL_UNDER_INTEGRATE_FUNC::apply, 0, zy1))
+        return INTEGRATOR.integrate(10000, FRENEL_UNDER_INTEGRATE_FUNC::apply, Math.min(zx1, zx2), Math.max(zx1, zx2))
+                * (lastPerR ? (Math.sqrt(Math.PI) / 2) - INTEGRATOR.integrate(10000, FRENEL_UNDER_INTEGRATE_FUNC::apply, 0, Math.min(Math.abs(zy1), Math.abs(zy2))) : INTEGRATOR.integrate(10000, FRENEL_UNDER_INTEGRATE_FUNC::apply, Math.min(zy1, zy2), Math.max(zy1, zy2)))
                 * 2 / Math.sqrt(Math.PI);
     }
 
@@ -306,8 +322,8 @@ public class Application {
         res.setY(res.getY() - r * Math.sin(arg));
         double newX = res.getX() * newAxiX.getX() + res.getY() * newAxiX.getY();
         double newY = res.getX() * newAxiY.getX() + res.getY() * newAxiY.getY();
-        res.setX(Math.abs(newX));
-        res.setY(Math.abs(newY));
+        res.setX(newX);
+        res.setY(newY);
         return res;
     }
 
@@ -328,6 +344,7 @@ public class Application {
         int numCenterSlice = 2 * nFuelSlice - 1;
         double d = dPrSlice[dPrSlice.length - 1] - 2 * dPr * COEF_STEP_PR;
         double h = d / (2 * (numCenterSlice - 1));
+        System.out.printf("H: %s\n", h);
         System.out.printf("d: %s\n", d);
         List<Vector<Double>> pointsFuel = new ArrayList<>();
         List<Vector<Double>> pointsOx = new ArrayList<>();
@@ -736,6 +753,62 @@ public class Application {
 
         public void setH(double h) {
             this.h = h;
+        }
+    }
+
+    private static class IevleevResult {
+        private List<List<Double>> kms;
+        private double argStep;
+        private double rStep;
+        private double argMax;
+        private double rMax;
+
+        public IevleevResult(List<List<Double>> kms, double argStep, double rStep, double argMax, double rMax) {
+            this.kms = kms;
+            this.argStep = argStep;
+            this.rStep = rStep;
+            this.argMax = argMax;
+            this.rMax = rMax;
+        }
+
+        public List<List<Double>> getKms() {
+            return kms;
+        }
+
+        public void setKms(List<List<Double>> kms) {
+            this.kms = kms;
+        }
+
+        public double getArgStep() {
+            return argStep;
+        }
+
+        public void setArgStep(double argStep) {
+            this.argStep = argStep;
+        }
+
+        public double getrStep() {
+            return rStep;
+        }
+
+        public void setrStep(double rStep) {
+            this.rStep = rStep;
+        }
+
+        public double getArgMax() {
+            return argMax;
+        }
+
+        public void setArgMax(double argMax) {
+            this.argMax = argMax;
+        }
+
+        public double getrMax() {
+            return rMax;
+        }
+
+        public void setrMax(double rMax) {
+            this.rMax = rMax;
         }
     }
 
