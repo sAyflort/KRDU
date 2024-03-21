@@ -32,6 +32,7 @@ public class Application {
     private static final double P = 83360; //тяга, Ньютоны
     private static final double MYA_DIV_MSUM = 0.95; //отношение расхода компонентов ядра к общему
     private static final double MPR_DIV_MSUM = 0.05; //отношение расхода компонентов пристенка к общему
+    private static final double MLOCAL_DIV_MFUEL = 0.02; //отношение расхода компонентов пристенка к общему
 
     private static final DecimalFormat decimal0Format = new DecimalFormat("0");
     private static final DecimalFormat decimal1Format = new DecimalFormat("0.0");
@@ -50,9 +51,11 @@ public class Application {
     private static int NUM_FUEL_SLICE = 3; //3
     private static int NUM_PR_SLICE = 2;
     private static int NUM_NOZZLE_PER_PR_SLICE = 48; // : 4
+    private static int NUM_LOCAL_NOZZLE = 33; // : 4
     private static double COEF_STEP_PR = 9.5; //  9.5
 
     private static double DELTA_P_NOZZLE_PR = 1; // < DELTA_P_MAG_FUEL1
+    private static double DELTA_P_LOCAL = 0.5; // < DELTA_P_MAG_FUEL1
     private static double DELTA_P_NOZZLE_FUEL = 2; // < DELTA_P_MAG_FUEL1
     private static double DELTA_P_NOZZLE_GG = 4; // < DELTA_P_MAG_FUEL1
     private static double NU_NOZZLE_PR = 0.8; //0.75-0.85
@@ -257,7 +260,7 @@ public class Application {
 
         System.out.printf("rOutputNozzleFuel = %s мм\n", decimal2Format.format(rOutputNozzleFuel * 1000));
 
-        double squareNozzleGG = mFlowNozzleGG / (NU_NOZZLE_GG * ggAstraRes.getRho() * Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), 1 / ggAstraRes.getK()) * Math.sqrt((2 * ggAstraRes.getK() / (ggAstraRes.getK() - 1) * ggAstraRes.getT() * ggAstraRes.getK() * (1 - Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), (ggAstraRes.getK() - 1) / ggAstraRes.getK())))));
+        double squareNozzleGG = mFlowNozzleGG / (NU_NOZZLE_GG * ggAstraRes.getRho() * Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), 1 / ggAstraRes.getK()) * Math.sqrt((2 * ggAstraRes.getK() / (ggAstraRes.getK() - 1) * ggAstraRes.getT() * ggAstraRes.getR() * (1 - Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), (ggAstraRes.getK() - 1) / ggAstraRes.getK())))));
         System.out.printf("squareNozzleGG = %s * 10^-5 м^2\n", decimal2Format.format(squareNozzleGG * 100000));
         double dNozzleGG = Math.sqrt(4 * squareNozzleGG / Math.PI);
 
@@ -265,6 +268,13 @@ public class Application {
 
         System.out.printf("dNozzleGG = sqrt(4 * squareNozzleGG / PI) = sqrt(4 * %s * 10^-5 / PI) = %s мм\n", decimal3Format.format(squareNozzleGG * Math.pow(10, 5)), decimal2Format.format(dNozzleGG * 1000));
         IevleevResult ievleevResult = getKMByIevlevMethod(mixedHead, dKs, mFlowNozzlePr, mFlowOxInCenter / numOfNozzleOx, mFlowFuelGGCenter / numOfNozzleOx, mFlowNozzleFuel, true);
+
+        double mFlowLocalOhl = (mFlowFuelCenter + mFlowNozzlePr) * MLOCAL_DIV_MFUEL;
+        System.out.printf("mFlowLocalOhl = %s кг/с\n", decimal2Format.format(mFlowLocalOhl));
+        double squareLocalOhl = mFlowLocalOhl / (NUM_LOCAL_NOZZLE * Math.sqrt(2 * DELTA_P_LOCAL * Math.pow(10, 6) * RHO_FUEL));
+        System.out.printf("squareLocalOhl = %s * 10^-5 м^2\n", decimal3Format.format(squareLocalOhl * Math.pow(10, 5)));
+        double dNozzleLocal = Math.sqrt(4 * squareLocalOhl / Math.PI);
+        System.out.printf("dNozzleLocal = %s мм\n", decimal2Format.format(dNozzleLocal * 1000));
 
     }
 
