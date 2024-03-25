@@ -44,6 +44,7 @@ public class Application {
     private static final Function<Double, Double> FRENEL_UNDER_INTEGRATE_FUNC = z -> Math.pow(Math.E, (-1) * z * z);
 
     private static final SimpsonIntegrator INTEGRATOR = new SimpsonIntegrator();
+    private static final BrentSolver solver = new BrentSolver(0.01);
     private static final double BETA_A = 12 * Math.PI / 180; // рад
     private static final double BETA_M = 0.7178; // рад
     private static final double X_A = 33.92;
@@ -52,7 +53,8 @@ public class Application {
     private static int NUM_PR_SLICE = 2;
     private static int NUM_NOZZLE_PER_PR_SLICE = 48; // : 4
     private static int NUM_LOCAL_NOZZLE = 33; // : 4
-    private static double COEF_STEP_PR = 9.5; //  9.5
+    private static double COEF_STEP_PR = 11.5; //  9.5
+    private static double COEF_STEP_PR_2 = 19.4; //  9.5
 
     private static double DELTA_P_NOZZLE_PR = 1; // < DELTA_P_MAG_FUEL1
     private static double DELTA_P_LOCAL = 0.5; // < DELTA_P_MAG_FUEL1
@@ -65,7 +67,7 @@ public class Application {
     private static double PHI_NOZZLE_FUEL = 0.45;
     private static double A_NOZZLE_FUEL = 2.5;
     private static double R_INPUT_DIV_R_NOZZLE_NOZZLE_FUEL = 1.07;
-    private static int NUM_OF_TAN_INPUT_NOZZLE_FUEL = 4;
+    private static int NUM_OF_TAN_INPUT_NOZZLE_FUEL = 2;
 
 
     private static double P1_O = 1.2;
@@ -206,7 +208,7 @@ public class Application {
         System.out.printf("dNozzlePr = sqrt(4 * squareNozzlePr / PI) = sqrt(4 * %s * 10^-5 / PI) = %s мм\n", decimal3Format.format(squareNozzlePr * Math.pow(10, 5)), decimal2Format.format(dNozzlePr * 1000));
 
         //TODO нужна оптимизация
-        MixedHead mixedHead = getMixedHead(NUM_PR_SLICE, NUM_NOZZLE_PER_PR_SLICE, NUM_FUEL_SLICE, dNozzlePr, dKs, true);
+        MixedHead mixedHead = getMixedHeadCircles(NUM_PR_SLICE, NUM_NOZZLE_PER_PR_SLICE, 6, dNozzlePr, dKs, true);
         double numOfNozzleFuel = mixedHead.getFuelNozzles().size();
         double numOfNozzleOx = mixedHead.getOxNozzles().size();
         System.out.printf("numOfNozzleOx = %s\n", numOfNozzleOx);
@@ -255,20 +257,22 @@ public class Application {
         System.out.printf("rKNozzleFuel = rInputNozzleFuel + rTanInputNozzleFuel = %s мм\n", decimal2Format.format(rKNozzleFuel * 1000));
 
         double argNozzleOutputR = Math.acos(1 - rTanInputNozzleFuel / rKNozzleFuel);
-        double rOutputNozzleFuel = Math.sqrt(Math.pow(rKNozzleFuel * Math.sin(argNozzleOutputR) + lInput, 2) + Math.pow(rKNozzleFuel * Math.cos(argNozzleOutputR), 2));
+        double rOutputNozzleFuel = rKNozzleFuel + 0.001; //Math.sqrt(Math.pow(rKNozzleFuel * Math.sin(argNozzleOutputR) + lInput, 2) + Math.pow(rKNozzleFuel * Math.cos(argNozzleOutputR), 2));
         System.out.println(rOutputNozzleFuel - rKNozzleFuel);
 
         System.out.printf("rOutputNozzleFuel = %s мм\n", decimal2Format.format(rOutputNozzleFuel * 1000));
 
         double squareNozzleGG = mFlowNozzleGG / (NU_NOZZLE_GG * ggAstraRes.getRho() * Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), 1 / ggAstraRes.getK()) * Math.sqrt((2 * ggAstraRes.getK() / (ggAstraRes.getK() - 1) * ggAstraRes.getT() * ggAstraRes.getR() * (1 - Math.pow(pKs / (pKs + DELTA_P_NOZZLE_GG), (ggAstraRes.getK() - 1) / ggAstraRes.getK())))));
         System.out.printf("squareNozzleGG = %s * 10^-5 м^2\n", decimal2Format.format(squareNozzleGG * 100000));
-        double dNozzleGG = Math.sqrt(4 * squareNozzleGG / Math.PI);
+        double dNozzleGGOut = Math.sqrt((4 * squareNozzleGG / Math.PI) + Math.pow((rOutputNozzleFuel * 2), 2));
+        System.out.printf("dNozzleGGOut = %s мм\n", decimal2Format.format(dNozzleGGOut * 1000));
+        /*double dNozzleGG = Math.sqrt(4 * squareNozzleGG / Math.PI);
 
         System.out.println("Шага достаточно: " + ((rOutputNozzleFuel + (dNozzleGG / 2) + 1 * Math.pow(10, -3)) < mixedHead.getH()) + "; diff: " + decimal2Format.format(((rOutputNozzleFuel + (dNozzleGG / 2) + 1 * Math.pow(10, -3)) - mixedHead.getH()) * 1000) + " мм");
 
         System.out.printf("dNozzleGG = sqrt(4 * squareNozzleGG / PI) = sqrt(4 * %s * 10^-5 / PI) = %s мм\n", decimal3Format.format(squareNozzleGG * Math.pow(10, 5)), decimal2Format.format(dNozzleGG * 1000));
+        */
         IevleevResult ievleevResult = getKMByIevlevMethod(mixedHead, dKs, mFlowNozzlePr, mFlowOxInCenter / numOfNozzleOx, mFlowFuelGGCenter / numOfNozzleOx, mFlowNozzleFuel, true);
-
         double mFlowLocalOhl = (mFlowFuelCenter + mFlowNozzlePr) * MLOCAL_DIV_MFUEL;
         System.out.printf("mFlowLocalOhl = %s кг/с\n", decimal2Format.format(mFlowLocalOhl));
         double squareLocalOhl = mFlowLocalOhl / (NUM_LOCAL_NOZZLE * Math.sqrt(2 * DELTA_P_LOCAL * Math.pow(10, 6) * RHO_FUEL));
@@ -285,9 +289,9 @@ public class Application {
         double rOfArea = mixedHead.getH() * 3;
         double rMax = (dKs - mixedHead.getH()) / 2;
         double rStep = rMax / (numOfSteps - 1);
-        double argStep = (Math.PI / 4) / (numOfSteps);
+        double argStep = (Math.PI / 2) / (numOfSteps);
         double arg = 0;
-        while (arg - (Math.PI / 4) < 0.0001) {
+        while (arg - (Math.PI / 2) < 0.0001) {
             double r = 0;
             List<Double> resultByArg = new LinkedList<>();
             while (r <= rMax) {
@@ -364,6 +368,73 @@ public class Application {
         res.setX(newX);
         res.setY(newY);
         return res;
+    }
+
+    private static MixedHead getMixedHeadCircles(
+            int nPrSlice, int nPrNozzlePerSlice, int totallyCenterSlice, double dPr, double dKs, boolean printPoints
+    ) {
+        List<Vector<Double>> pointsPr = new ArrayList<>();
+        double[] dPrSlice = new double[nPrSlice];
+        for (int i = 0; i < dPrSlice.length; i++) {
+            dPrSlice[i] = dKs - (i + 1) * 2 * (dPr) * COEF_STEP_PR;
+            double arg = 0;
+            double stepAgr = 2 * Math.PI / nPrNozzlePerSlice;
+            while (arg < 2 * Math.PI) {
+                pointsPr.add(new Vector<>(dPrSlice[i] * Math.cos(arg) / 2, dPrSlice[i] * Math.sin(arg) / 2));
+                arg += stepAgr;
+            }
+        }
+        double d = dPrSlice[dPrSlice.length - 1] - 2 * dPr * COEF_STEP_PR_2;
+        double h = d / (2 * (totallyCenterSlice - 1));
+        System.out.printf("H: %s мм\n", decimal2Format.format(h * 1000));
+        System.out.printf("d: %s мм\n", decimal2Format.format(d * 1000));
+        List<Vector<Double>> pointsFuel = new ArrayList<>();
+        List<Vector<Double>> pointsOx = new ArrayList<>();
+
+        double[] dСenterSlice = new double[totallyCenterSlice];
+        dСenterSlice[0] = 0;
+        pointsFuel.add(new Vector<>(0d,0d));
+        pointsOx.add(new Vector<>(0d,0d));
+        for (int i = 1; i < dСenterSlice.length; i++) {
+            dСenterSlice[i] = dСenterSlice[i-1] + h * 2;
+            int finalI = i;
+            double m = solver.solve(1000, count -> Math.sin(Math.PI / (2 * count)) * dСenterSlice[finalI] - h, 1, 100);
+            long n =  2 * Math.round(m);
+            double arg = 0;
+            double stepArg = (2 * Math.PI) / n;
+            for (int j = 0; j < n; j++) {
+                Vector<Double> point = new Vector<>((dСenterSlice[i] / 2) * Math.cos(arg),(dСenterSlice[i] / 2) * Math.sin(arg));
+                pointsFuel.add(point);
+                pointsOx.add(point);
+                arg += stepArg;
+            }
+        }
+        if (printPoints) {
+            List<Vector<Double>> listForPrint = new ArrayList<>(pointsOx);
+            listForPrint.addAll(pointsFuel);
+            listForPrint.addAll(pointsPr);
+            System.out.print("OX:");
+            pointsOx.forEach((v) -> {
+                String formattedX = String.format("%.5f", v.getX()).replace(",", ".");
+                String formattedY = String.format("%.5f", v.getY()).replace(",", ".");
+                System.out.printf("(%s, %s),", formattedX, formattedY);
+            });
+            System.out.print("\nPR:");
+            pointsPr.forEach((v) -> {
+                String formattedX = String.format("%.5f", v.getX()).replace(",", ".");
+                String formattedY = String.format("%.5f", v.getY()).replace(",", ".");
+                System.out.printf("(%s, %s),", formattedX, formattedY);
+            });
+            System.out.print("\nFUEL:");
+            pointsFuel.forEach((v) -> {
+                String formattedX = String.format("%.5f", v.getX()).replace(",", ".");
+                String formattedY = String.format("%.5f", v.getY()).replace(",", ".");
+                System.out.printf("(%s, %s),", formattedX, formattedY);
+            });
+            System.out.println("");
+        }
+
+        return new MixedHead(pointsOx, pointsFuel, pointsPr, h);
     }
 
     private static MixedHead getMixedHead(
@@ -464,7 +535,6 @@ public class Application {
         Function<Double, Double> requiredPower = pGg -> Math.pow(10, 3) * (mOx / (ETA_OX * RHO_OX)) * (pGg + DELTA_P_MAG_OX - P1_O) + (mFuel / (ETA_FUEL * RHO_FUEL)) * (pGg + DELTA_P_MAG_FUEL - P1_G); //кВт
         Function<Double, Double> turbinePower = pGg -> Math.pow(10, -3) * r * t * (1 - Math.pow((pKs + DELTA_P_T1) / (pGg - DELTA_P_T2), (k - 1) / k)) * mOx * ((1 + kGG) / kGG) * ETA_T * k / (k - 1); //кВт
 
-        BrentSolver solver = new BrentSolver(0.01);
         double pGG = solver.solve(100, p -> requiredPower.apply(p) - turbinePower.apply(p), 1, 30);
         System.out.printf("pGG = %s МПа (подбор корней)\n", decimal1Format.format(pGG));
 
